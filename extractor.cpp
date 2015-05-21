@@ -5,6 +5,30 @@
 #include <QDBusInterface>
 #include <QDBusArgument>
 #include <QDBusReply>
+#include <QDBusMetaType>
+
+const QDBusArgument &operator>> (const QDBusArgument &argument, MDRaidMember& device)
+{
+    argument.beginStructure();
+    argument >> device.block;
+    argument >> device.slot;
+    argument >> device.state;
+    argument >> device.expansion;
+    argument.endStructure();
+    return argument;
+}
+
+const QDBusArgument &operator<< (QDBusArgument &argument, const MDRaidMember raidMember)
+{
+    argument.beginStructure();
+    argument << raidMember.block;
+    argument << raidMember.slot;
+    argument << raidMember.state;
+    argument << raidMember.expansion;
+    argument.endStructure();
+    return argument;
+}
+
 
 extractor::extractor()
 {
@@ -16,6 +40,8 @@ extractor::extractor()
     sysmountpoints.append("/srv");
     sysmountpoints.append("/var");
     sysmountpoints.append("/boot");
+
+    qDBusRegisterMetaType<MDRaidMember>();
 }
 
 extractor::~extractor()
@@ -42,6 +68,11 @@ void extractor::extract(managedobject *mo, ManagedObjectList& objlist)
         {
             drivedevice *dev = extract_drive(path, il);
             mo->drivedev[path] = dev;
+        }
+        else if (path.startsWith(UDISK2_MDRAID_PATH))
+        {
+            mdraiddevice *dev = extract_mdraid(path, il);
+            mo->mdraiddev[path] = dev;
         }
         else{
             //do nothing
@@ -102,6 +133,16 @@ blockdevice* extractor::extract_block(QString path, const InterfaceList &il)
                     QDBusObjectPath drivePath = qdbus_cast<QDBusObjectPath>(v);
                     blockdev->drivePath = drivePath.path();
                 }
+                else if (property == "MDRaid")
+                {
+                    QDBusObjectPath raidPath = qdbus_cast<QDBusObjectPath>(v);
+                    blockdev->mdraid = raidPath.path();
+                }
+                else if (property == "MDRaidMember")
+                {
+                    QDBusObjectPath raidPath = qdbus_cast<QDBusObjectPath>(v);
+                    blockdev->mdraidMember = raidPath.path();
+                }
                 else if (property == "ReadOnly")
                 {
                     blockdev->readonly = v.toBool();
@@ -143,7 +184,7 @@ blockdevice* extractor::extract_block(QString path, const InterfaceList &il)
                     blockdev->isloop = blockdev->device.startsWith(DEVICE_LOOP_PREFIX);
                 }
             }            
-            //qDebug() << "------------device" <<blockdev->device <<blockdev->id << "part num" << blockdev->partnum;
+            //qDebug() << "------------device" <<blockdev->drive <<blockdev->id << "part num" << blockdev->partnum;
         }
         else if (interface == UDISK2_FS_INTERFACE)
         {
@@ -299,10 +340,86 @@ drivedevice* extractor::extract_drive(QString path, const InterfaceList &il)
     return drivedev;
 }
 
+mdraiddevice *extractor::extract_mdraid(QString path, const InterfaceList &il)
+{
+    mdraiddevice *raiddev = new mdraiddevice();
+    raiddev->path = path;
+
+    QList<QString> interfaces = il.keys();
+    foreach(QString interface, interfaces)
+    {
+        QVariantMap vm = il.value(interface);
+
+        if (interface == UDISK2_MDRAID_INTERFACE)
+        {
+            foreach(QString property, vm.keys())
+            {
+                QVariant v = vm.value(property);
+                if (property == "ActiveDevices")
+                {
+                    raiddev->members = qdbus_cast<QList<MDRaidMember> >(v);
+
+                    /*foreach(MDRaidMember member, raiddev->members)
+                    {
+                        qDebug() << member.block.path() << member.slot << member.state;
+                    }*/
+                }
+                else if (property == "ChunkSize")
+                {
+                    raiddev->chunkSize = v.toULongLong();
+                }
+                else if (property == "UUID")
+                {
+                    raiddev->uuid = v.toString();
+                }
+                else if (property == "Name")
+                {
+                    raiddev->name = v.toString();
+                }
+                else if (property == "NumDevices")
+                {
+                    raiddev->numDevices =  v.toUInt();
+                }
+                else if (property == "Size")
+                {
+                    raiddev->size = v.toULongLong();
+                }
+                else if (property == "SyncAction")
+                {
+                    raiddev->syncAction = v.toString();
+                }
+                else if (property == "SyncCompleted")
+                {
+                    raiddev->syncCompleted = v.toDouble();
+                }
+                else if (property == "SyncRate")
+                {
+                    raiddev->syncRate = v.toULongLong();
+                }
+                else if (property == "SyncRemainingTime")
+                {
+                    raiddev->syncRemainingTime = v.toULongLong();
+                }
+                else if (property == "Degraded")
+                {
+                    raiddev->degraded = v.toUInt();
+                }
+                else if (property == "BitmapLocation")
+                {
+                    raiddev->bitmapLocation = QString(v.toByteArray());
+                    //qDebug() << "bitmap" << raiddev->bitmapLocation;
+                }
+            }
+        }
+    }
+    return raiddev;
+}
+
 void extractor::mark_device_flag(managedobject *mo)
 {
     QList<blockdevice*> blocks = mo->blockdev.values();
     QList<drivedevice*> drives = mo->drivedev.values();
+    QList<mdraiddevice*> raids = mo->mdraiddev.values();
     QString bootPartition;
     QString bootDevice;
     //find boot partition
@@ -312,20 +429,41 @@ void extractor::mark_device_flag(managedobject *mo)
         {
             bootPartition = block->id;
         }
-        //mark usb and drive id
-        foreach(drivedevice *drive, drives)
+        if (block->mdraid.length() > 1) //exclude '/'
         {
-            if (drive->path == block->drivePath)
+            foreach(mdraiddevice *raid, raids)
             {
-                if (block->id.isEmpty())    //id of usb drive may be empty
+                if (block->mdraid == raid->path || block->mdraidMember == raid->path)
                 {
-                    block->id = drive->id;
+                    if (block->driveId.isEmpty())
+                        block->driveId = raid->name;
                 }
-                block->driveId = drive->id;
-                block->isusb = (drive->connectbus.toLower() == USB_CONNECTTED_BUS);
-                break;
             }
         }
+
+        //qDebug() <<"drive path" <<block->device <<block->drivePath;
+        //mark usb and drive id
+        if (block->drivePath.length() > 1)
+        {
+            foreach(drivedevice *drive, drives)
+            {
+                if (drive->path == block->drivePath)
+                {
+                    if (block->id.isEmpty())    //id of usb drive may be empty
+                    {
+                        block->id = drive->id;
+                    }
+                    block->driveId = drive->id;
+                    block->isusb = (drive->connectbus.toLower() == USB_CONNECTTED_BUS);
+                    break;
+                }
+            }
+        }
+        if (block->driveId.isEmpty())
+        {
+            block->driveId = block->id;
+        }
+
         //mark block drive device name for partition devic
         if (!block->isdrive)
         {

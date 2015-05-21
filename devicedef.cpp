@@ -35,3 +35,14 @@ managedobject::~managedobject()
 {
 
 }
+
+
+mdraiddevice::mdraiddevice()
+{
+
+}
+
+mdraiddevice::~mdraiddevice()
+{
+
+}

@@ -10,6 +10,7 @@ grdisk是针对Linux平台的集磁盘管理,ISCSI管理的命令行工具.
 - 磁盘挂载/卸载
 - 读写 /etc/fstab
 - 支持ISCSI(发现/登录/登出/initiator读写)
+- 支持RAID
 
 ##### Dependency #####
 - QT

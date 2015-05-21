@@ -7,6 +7,7 @@
 #include <QStringList>
 #include <QVariantMap>
 #include <QDBusObjectPath>
+#include <QDBusMetaType>
 
 //error code
 #define GE_OK           0
@@ -25,6 +26,7 @@
 #define UDISK2_MANAGER_PATH     "/org/freedesktop/UDisks2/Manager"
 #define UDISK2_BLOCK_PATH       "/org/freedesktop/UDisks2/block_devices"
 #define UDISK2_DRIVE_PATH       "/org/freedesktop/UDisks2/drives"
+#define UDISK2_MDRAID_PATH      "/org/freedesktop/UDisks2/mdraid"
 
 //block device interface
 #define UDISK2_BLOCK_INTERFACE  "org.freedesktop.UDisks2.Block"
@@ -35,6 +37,9 @@
 //drive device interface
 #define UDISK2_DRIVE_INTERFACE  "org.freedesktop.UDisks2.Drive"
 #define UDISK2_ATA_INTERFACE    "org.freedesktop.UDisks2.Drive.Ata"
+
+//mdraid device interval
+#define UDISK2_MDRAID_INTERFACE "org.freedesktop.UDisks2.MDRaid"
 
 #define DEVICE_ID_PREFIX        "by-id-"
 #define DEVICE_UUID_PREFIX      "by-uuid-"
@@ -58,6 +63,17 @@
 typedef QMap<QString, QVariantMap> InterfaceList;
 typedef QMap<QDBusObjectPath, InterfaceList> ManagedObjectList;
 
+struct MDRaidMember
+{
+    QDBusObjectPath block;
+    qint32 slot;
+    QStringList state;
+    QVariantMap expansion;
+};
+
+Q_DECLARE_METATYPE(MDRaidMember)
+Q_DECLARE_METATYPE(QList<MDRaidMember>)
+
 struct grdisk_opt_t
 {
     bool show_usb_device;
@@ -75,6 +91,29 @@ struct dfentry
     qulonglong used;
     qulonglong avail;
     QString mountpoint;
+};
+
+class mdraiddevice
+{
+public:
+    mdraiddevice();
+    ~mdraiddevice();
+public:
+    QString path;
+    QString uuid;
+    QString name;
+    QString level;
+    int numDevices;
+    int degraded;
+    qulonglong size;
+    QString syncAction;
+    double syncCompleted;
+    qulonglong syncRate;
+    qulonglong syncRemainingTime;
+    qulonglong chunkSize;
+    QString bitmapLocation;
+    QList<MDRaidMember> members;
+
 };
 
 class drivedevice
@@ -114,11 +153,13 @@ public:
     bool isboot;
     bool isram;
     bool isloop;
+    bool israid;
     qulonglong size;
     QString drive;          //drive device name. such as sda, sdb, sdc...
     QString drivePath;      //such as /org/freedesktop/UDisks2/drives/ST1000DM003_1CH162_S1DB82SP
     QString driveId;        //driver id. such as ST1000DM003-1CH162-S1DB82SP
     QString uuid;   //only partition have uuid
+
     QStringList interface;
     QStringList symlinks;
 
@@ -135,6 +176,10 @@ public:
     QString parttable;
     //partitoin table property
     QString parttabtype;
+
+    //raid info
+    QString mdraid;
+    QString mdraidMember;
 };
 
 class managedobject
@@ -147,6 +192,7 @@ public:
     QString path;
     QMap<QString, drivedevice*> drivedev;
     QMap<QString, blockdevice*> blockdev;
+    QMap<QString, mdraiddevice*> mdraiddev;
 };
 
 #include <QMetaType>

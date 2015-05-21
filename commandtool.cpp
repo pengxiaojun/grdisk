@@ -101,11 +101,6 @@ int commandtool::mount_part(const blockdevice *block, QString mount_point, QStri
     {
         mnt.mkdir(mount_point);
     }
-    r = chown(mount_point.toAscii().data(), usr_id, grp_id);
-    if(r < 0)
-    {
-        util::log(QString("chown %1 to uid=%2 gid=%3 error %3").arg(mount_point).arg(usr_id).arg(grp_id).arg(errno));
-    }
 
     while (true)
     {
@@ -121,6 +116,11 @@ int commandtool::mount_part(const blockdevice *block, QString mount_point, QStri
         else{
             break;
         }
+    }
+    r = chown(mount_point.toAscii().data(), usr_id, grp_id);
+    if(r < 0)
+    {
+        util::log(QString("chown %1 to uid=%2 gid=%3 error %3").arg(mount_point).arg(usr_id).arg(grp_id).arg(errno));
     }
     return (r == 0) ? 0 : -1;
 }
