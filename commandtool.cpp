@@ -216,6 +216,7 @@ int commandtool::automnt_part(const blockdevice *block, QString mount_point)
         {
             if (fsname == symlink)
             {
+                endmntent(fp);
                 return 0;   //already exist;
             }
         }
@@ -238,16 +239,19 @@ int commandtool::automnt_part(const blockdevice *block, QString mount_point)
         util::log(QString("automount %1 at can not found in %2 symbol links").arg(device_path).arg(block->device));
     }
     struct mntent *m = (mntent*)calloc(1,sizeof(mntent));
-    m->mnt_dir      = mount_point.toAscii().data();
-    m->mnt_fsname   = device_path.toAscii().data();
+    m->mnt_fsname   = strdup(device_path.toAscii().data());
+    m->mnt_dir      = strdup(mount_point.toAscii().data());
     m->mnt_type     = strdup("ext4");
     m->mnt_opts     = strdup("defaults,nofail,user");
     m->mnt_passno   = 2;
     m->mnt_freq     = 0;
 
+    util::log(QString("mnt=%1 fsname=%2").arg(mount_point).arg(device_path));
     fp = setmntent(FSTAB_FILE,"a+"); //open file for describing the mounted filesystems
     addmntent(fp,m);
     endmntent(fp);
+    free(m->mnt_dir);
+    free(m->mnt_fsname);
     free(m->mnt_type);
     free(m->mnt_opts);
     free(m);
